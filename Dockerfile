@@ -19,7 +19,7 @@ COPY . .
 
 RUN gcc -o broker src/main.c -lnats
 
-FROM debian:latest
+FROM alpine:latest
 
 WORKDIR /broker
 COPY --from=builder /app/broker /broker/broker
