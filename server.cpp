@@ -1,6 +1,5 @@
 #define _QNX_SOURCE 1
 #include <sys/neutrino.h>
-#include <sys/sockio.h>
 #include <arpa/inet.h>
 #include <iostream>
 #include <cstring>
@@ -29,32 +28,10 @@ int main() {
     socklen_t len;
     struct sockaddr_in address, cli;
 
-    // Set real-time scheduling (QNX-specific)
-    struct sched_param sp;
-    sp.sched_priority = 10;
-    if (SchedSet(0, 0, SCHED_FIFO, &sp) == -1) {
-        perror("SchedSet failed");
-    }
-
-    // Create socket
-    sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sockfd < 0) {
-        std::cerr << "[SERVER] socket creation failed: " << strerror(errno) << std::endl;
+    // Create socket without any special options
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        std::cerr << "[SERVER] socket failed: " << strerror(errno) << std::endl;
         exit(EXIT_FAILURE);
-    }
-
-    // QNX-compatible socket options
-    int reuse = 1;
-    struct linger ling = {0, 0};
-
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse))) {
-        perror("setsockopt(SO_REUSEADDR)");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    if (setsockopt(sockfd, SOL_SOCKET, SO_LINGER, (const char*)&ling, sizeof(ling))) {
-        perror("setsockopt(SO_LINGER)");
     }
 
     // Bind configuration
@@ -80,7 +57,7 @@ int main() {
     while (true) {
         len = sizeof(cli);
         if ((connfd = accept(sockfd, (struct sockaddr*)&cli, &len)) < 0) {
-            std::cerr << "[SERVER] accept failed: " << strerror(errno) << std::endl;
+//            std::cerr << "[SERVER] accept failed: " << strerror(errno) << std::endl;
             continue;
         }
 
@@ -92,16 +69,13 @@ int main() {
             buff[bytes_read] = '\0';
             std::cout << "[SERVER] Received: " << buff << std::endl;
 
-            const char* response = "ACK from QNX server";
+            const char* response = "ACK from QNX";
             if (write(connfd, response, strlen(response)) < 0) {
-                std::cerr << "[SERVER] write failed: " << strerror(errno) << std::endl;
+                std::cerr << "[SERVER] write error: " << strerror(errno) << std::endl;
             }
         }
 
-        if (bytes_read < 0) {
-            std::cerr << "[SERVER] read error: " << strerror(errno) << std::endl;
-        }
-
+        close(connfd);
     }
 
     close(sockfd);

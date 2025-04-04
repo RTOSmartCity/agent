@@ -9,7 +9,7 @@ server: server.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LIBS)
 
 client: client.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $< $(LIBS)
+	q++ $(CXXFLAGS) -o $@ $< $(LIBS)
 
 clean:
 	rm -f server client
