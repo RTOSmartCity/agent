@@ -1,15 +1,14 @@
-# QNX-specific Makefile for aarch64
-CXX = q++ -Vgcc_ntoaarch64le
-CXXFLAGS = -D_QNX_SOURCE -Wall -Wextra
-LIBS = -Wl,-Bstatic -lsocket -Wl,-Bdynamic -lc
+CXX = q++
+CXXFLAGS = -Wall -Wextra -Vgcc_ntoaarch64le
+LIBS = -lsocket
 
 all: server client
 
 server: server.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $< $(LIBS)
+	$(CXX) $(CXXFLAGS) -o server server.cpp $(LIBS)
 
 client: client.cpp
-	q++ $(CXXFLAGS) -o $@ $< $(LIBS)
+	$(CXX) $(CXXFLAGS) -o client client.cpp $(LIBS)
 
 clean:
 	rm -f server client

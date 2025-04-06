@@ -1,83 +1,113 @@
-#define _QNX_SOURCE 1
-#include <sys/neutrino.h>
-#include <arpa/inet.h>
 #include <iostream>
-#include <cstring>
-#include <netdb.h>
-#include <netinet/in.h>
+#include <string>
+#include <map>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <unistd.h>
 
-#define MAX         80
-#define PORT        8080
+class MessageHandlerServer {
+private:
+    int serverSocket;
+    std::map<std::string, std::string> credentials;  // username -> password
+    std::map<int, std::string> authenticatedClients; // socket -> username
 
-std::string bigEndianToIPAndPort(uint32_t big_endian_ip, uint16_t port) {
-    uint32_t host_ip = ntohl(big_endian_ip);
-    unsigned char bytes[4];
-    bytes[0] = (host_ip >> 24) & 0xFF;
-    bytes[1] = (host_ip >> 16) & 0xFF;
-    bytes[2] = (host_ip >> 8) & 0xFF;
-    bytes[3] = host_ip & 0xFF;
-    return std::to_string(bytes[0]) + "." + std::to_string(bytes[1]) + "." +
-           std::to_string(bytes[2]) + "." + std::to_string(bytes[3]) + ":" + std::to_string(port);
-}
+public:
+    MessageHandlerServer(int port) {
+        // Hardcoded credentials for simplicity
+        credentials["vehicle1"] = "pass123";
+        credentials["pedestrian1"] = "pass456";
+        credentials["traffic1"] = "pass789";
 
-int main() {
-    char buff[MAX];
-    int sockfd, connfd;
-    socklen_t len;
-    struct sockaddr_in address, cli;
-
-    // Create socket without any special options
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        std::cerr << "[SERVER] socket failed: " << strerror(errno) << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    // Bind configuration
-    memset(&address, 0, sizeof(address));
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_ANY);
-    address.sin_port = htons(PORT);
-
-    if (bind(sockfd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        std::cerr << "[SERVER] bind failed: " << strerror(errno) << std::endl;
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    if (listen(sockfd, 5) < 0) {
-        std::cerr << "[SERVER] listen failed: " << strerror(errno) << std::endl;
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    std::cout << "[SERVER] Listening on port " << PORT << std::endl;
-
-    while (true) {
-        len = sizeof(cli);
-        if ((connfd = accept(sockfd, (struct sockaddr*)&cli, &len)) < 0) {
-//            std::cerr << "[SERVER] accept failed: " << strerror(errno) << std::endl;
-            continue;
+        // Create server socket
+        serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+        if (serverSocket < 0) {
+            std::cerr << "Error creating socket" << std::endl;
+            exit(1);
         }
 
-        std::cout << "[SERVER] Accepted connection from: "
-                  << bigEndianToIPAndPort(cli.sin_addr.s_addr, cli.sin_port) << std::endl;
+        // Bind to port
+        sockaddr_in serverAddr;
+        serverAddr.sin_family = AF_INET;
+        serverAddr.sin_port = htons(port);
+        serverAddr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
+            std::cerr << "Error binding to port" << std::endl;
+            exit(1);
+        }
 
-        ssize_t bytes_read;
-        while ((bytes_read = read(connfd, buff, sizeof(buff)-1)) > 0) {
-            buff[bytes_read] = '\0';
-            std::cout << "[SERVER] Received: " << buff << std::endl;
+        // Listen for connections
+        if (listen(serverSocket, 5) < 0) {
+            std::cerr << "Error listening" << std::endl;
+            exit(1);
+        }
+        std::cout << "Server listening on port " << port << std::endl;
+    }
 
-            const char* response = "ACK from QNX";
-            if (write(connfd, response, strlen(response)) < 0) {
-                std::cerr << "[SERVER] write error: " << strerror(errno) << std::endl;
+    void run() {
+        while (true) {
+            // Accept new connections
+            sockaddr_in clientAddr;
+            socklen_t clientLen = sizeof(clientAddr);
+            int clientSocket = accept(serverSocket, (sockaddr*)&clientAddr, &clientLen);
+            if (clientSocket < 0) {
+                std::cerr << "Error accepting connection" << std::endl;
+                continue;
+            }
+
+            // Handle authentication
+            char buffer[1024] = {0};
+            int bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
+            if (bytesRead > 0) {
+                std::string authMessage(buffer, bytesRead);
+                size_t delimiterPos = authMessage.find('|');
+                if (delimiterPos != std::string::npos) {
+                    std::string username = authMessage.substr(0, delimiterPos);
+                    std::string password = authMessage.substr(delimiterPos + 1);
+                    if (credentials.count(username) && credentials[username] == password) {
+                        authenticatedClients[clientSocket] = username;
+                        write(clientSocket, "AUTH_SUCCESS", 12);
+                        std::cout << "Client " << username << " authenticated" << std::endl;
+                    } else {
+                        write(clientSocket, "AUTH_FAILURE", 12);
+                        close(clientSocket);
+                    }
+                }
+            }
+
+            // Handle messages from authenticated clients
+            for (auto it = authenticatedClients.begin(); it != authenticatedClients.end();) {
+                int clientSocket = it->first;
+                char msgBuffer[1024] = {0};
+                int bytesRead = read(clientSocket, msgBuffer, sizeof(msgBuffer) - 1);
+                if (bytesRead > 0) {
+                    std::string message(msgBuffer, bytesRead);
+                    std::cout << "Received from " << it->second << ": " << message << std::endl;
+                    // Relay message to all other clients
+                    for (const auto& otherClient : authenticatedClients) {
+                        if (otherClient.first != clientSocket) {
+                            write(otherClient.first, message.c_str(), message.size());
+                        }
+                    }
+                    ++it;
+                } else if (bytesRead == 0) {
+                    // Client disconnected
+                    std::cout << "Client " << it->second << " disconnected" << std::endl;
+                    close(clientSocket);
+                    it = authenticatedClients.erase(it);
+                } else {
+                    ++it;
+                }
             }
         }
-
-        close(connfd);
     }
 
-    close(sockfd);
+    ~MessageHandlerServer() {
+        close(serverSocket);
+    }
+};
+
+int main() {
+    MessageHandlerServer server(8080);
+    server.run();
     return 0;
 }
