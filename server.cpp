@@ -84,9 +84,10 @@ public:
                     std::cout << "Received from " << it->second << ": " << message << std::endl;
                     // Relay message to all other clients
                     for (const auto& otherClient : authenticatedClients) {
-                        if (otherClient.first != clientSocket) {
-                            write(otherClient.first, message.c_str(), message.size());
-                        }
+                        write(otherClient.first, message.c_str(), message.size());
+                        // if (otherClient.first != clientSocket) {
+                        //     write(otherClient.first, message.c_str(), message.size());
+                        // }
                     }
                     ++it;
                 } else if (bytesRead == 0) {

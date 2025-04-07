@@ -73,7 +73,7 @@ public:
 };
 
 int main() {
-    MessageHandler client("3.226.148.224", 8080);
+    MessageHandler client("127.0.0.1", 8080);
     if (client.authenticate("vehicle1", "pass123")) {
         std::cout << "Authentication successful" << std::endl;
         client.sendMessage("Hello from vehicle1");

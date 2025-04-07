@@ -1,6 +1,6 @@
-CXX = q++
-CXXFLAGS = -Wall -Wextra -Vgcc_ntoaarch64le
-LIBS = -lsocket
+CXX = g++
+CXXFLAGS = -Wall -Wextra
+LIBS = 
 
 all: server client
 
