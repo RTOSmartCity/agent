@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <stdexcept>
 
 class MessageHandler {
 private:
@@ -70,16 +71,20 @@ public:
     bool authenticate(const std::string& username, const std::string& password) {
         std::string authMessage = username + "|" + password;
         if (write(clientSocket, authMessage.c_str(), authMessage.size()) < 0) {
+            std::cerr << "Failed to send authentication message\n";
             return false;
         }
         
-        std::string response = getMessage();
+        std::string response = waitForMessage();
         if (response == "AUTH_SUCCESS") {
             authenticated = true;
             this->username = username;
+            std::cout << "Authentication successful for " << username << "\n";
             return true;
+        } else {
+            std::cerr << "Error: Authentication failed for " << username << "\n";
+            return false;
         }
-        return false;
     }
 
     void sendMessage(const std::string& message) {
@@ -92,6 +97,16 @@ public:
     }
 
     std::string getMessage() {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        if (!messageQueue.empty()) {
+            std::string msg = messageQueue.front();
+            messageQueue.pop();
+            return msg;
+        }
+        return "";
+    }
+
+    std::string waitForMessage() {
         std::unique_lock<std::mutex> lock(queueMutex);
         queueCondVar.wait(lock, [this]{ return !messageQueue.empty() || !running; });
         if (!messageQueue.empty()) {
@@ -170,8 +185,8 @@ int main() {
         std::string serverIp = envIp ? envIp : "127.0.0.1";
         const int serverPort = 8080;
 
-        Vehicle vehicle1(serverIp, serverPort, "vehicle1",   "pass123");
-        Vehicle vehicle2(serverIp, serverPort, "pedestrian1","pass456");
+        Vehicle vehicle1(serverIp, serverPort, "vehicle1", "pass123");
+        Vehicle vehicle2(serverIp, serverPort, "pedestrian1", "pass456");
 
         // Simulate CV2X communication
         for (int i = 0; i < 5; ++i) {
