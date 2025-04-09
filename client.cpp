@@ -166,8 +166,12 @@ public:
 
 int main() {
     try {
-        Vehicle vehicle1("127.0.0.1", 8080, "vehicle1", "pass123");
-        Vehicle vehicle2("127.0.0.1", 8080, "pedestrian1", "pass456");
+        const char* envIp = std::getenv("SERVER_IP");
+        std::string serverIp = envIp ? envIp : "127.0.0.1";
+        const int serverPort = 8080;
+
+        Vehicle vehicle1(serverIp, serverPort, "vehicle1",   "pass123");
+        Vehicle vehicle2(serverIp, serverPort, "pedestrian1","pass456");
 
         // Simulate CV2X communication
         for (int i = 0; i < 5; ++i) {
