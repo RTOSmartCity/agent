@@ -1,3 +1,5 @@
+#define _QNX_SOURCE
+#define _POSIX_C_SOURCE 200112L
 #include <iostream>
 #include <string>
 #include <queue>
