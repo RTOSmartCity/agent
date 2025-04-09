@@ -1,4 +1,5 @@
 TARGET_OS ?= notqnx
+srcdir := src
 
 ifeq ($(TARGET_OS), qnx)
 CXX = q++
@@ -12,14 +13,14 @@ endif
 
 all: server vehicle trafficlight
 
-server: server.cpp
-	$(CXX) $(CXXFLAGS) -o server server.cpp $(LIBS)
+server: $(srcdir)/server.cpp
+	$(CXX) $(CXXFLAGS) -o server $(srcdir)/server.cpp $(LIBS)
 
-vehicle: vehicle.cpp messagehandler.cpp
-	$(CXX) $(CXXFLAGS) -o vehicle vehicle.cpp messagehandler.cpp $(LIBS)
+vehicle: $(srcdir)/vehicle.cpp $(srcdir)/messagehandler.cpp
+	$(CXX) $(CXXFLAGS) -o vehicle $(srcdir)/vehicle.cpp $(srcdir)/messagehandler.cpp $(LIBS)
 
-trafficlight: trafficlight.cpp messagehandler.cpp
-	$(CXX) $(CXXFLAGS) -o trafficlight trafficlight.cpp messagehandler.cpp $(LIBS)
+trafficlight: $(srcdir)/trafficlight.cpp $(srcdir)/messagehandler.cpp
+	$(CXX) $(CXXFLAGS) -o trafficlight $(srcdir)/trafficlight.cpp $(srcdir)/messagehandler.cpp $(LIBS)
 
 clean:
 	rm -f server vehicle trafficlight
