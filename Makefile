@@ -1,4 +1,4 @@
-TARGET_OS ?= notqnx
+TARGET_OS ?= qnx
 srcdir := src
 
 ifeq ($(TARGET_OS), qnx)
