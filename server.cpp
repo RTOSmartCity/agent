@@ -60,23 +60,29 @@ private:
             if (bytesRead > 0) {
                 std::string message(msgBuffer, bytesRead);
                 std::string relayedMessage = username + ":" + message;
-                
                 // Relay message to all authenticated clients
-                std::vector<int> targets;
+//                std::vector<int> targets;
+//                {
+//                    std::lock_guard<std::mutex> lock(clientsMutex);
+//                    for (const auto& pair : authenticatedClients) {
+//                        targets.push_back(pair.first);
+//                    }
+//                }
+                std::lock_guard<std::mutex> lock(clientsMutex);
                 {
-                    std::lock_guard<std::mutex> lock(clientsMutex);
-                    for (const auto& pair : authenticatedClients) {
-                        targets.push_back(pair.first);
-                    }
-                }
-                for (int target : targets) {
-                    auto it = socketMutexes.find(target);
-                    if (it != socketMutexes.end()) {
-                        std::lock_guard<std::mutex> lock(*it->second);
-                        if (write(target, relayedMessage.c_str(), relayedMessage.size()) < 0) {
-                            std::cerr << "Error writing to socket " << target << "\n";
-                        }
-                    }
+					for (const auto& pair : authenticatedClients) {
+						int target = pair.first;
+						std::string dest = pair.second;
+						auto it = socketMutexes.find(target);
+						if (it != socketMutexes.end()) {
+							std::lock_guard<std::mutex> lock(*it->second);
+							if ( username == dest ) continue; // skip the same client
+							if (write(target, relayedMessage.c_str(), relayedMessage.size()) < 0) {
+								std::cerr << "Error writing to socket " << target << "\n";
+							}
+							std::cout << "Forwarded message to " << dest << " from " << username << std::endl;
+						}
+					}
                 }
             } else if (bytesRead == 0) {
                 // Client disconnected
