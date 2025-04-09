@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra
-LIBS = 
+CXXFLAGS = -std=c++17 -Wall -Wextra
+LIBS = # -lsocket
 
 all: server client
 

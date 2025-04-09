@@ -1,5 +1,9 @@
 #include <iostream>
 #include <string>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -9,80 +13,170 @@ class MessageHandler {
 private:
     int clientSocket;
     bool authenticated;
+    std::string username;
+    std::thread receiverThread;
+    std::queue<std::string> messageQueue;
+    std::mutex queueMutex;
+    std::condition_variable queueCondVar;
+    bool running;
+
+    void receiverFunction() {
+        while (running) {
+            char buffer[1024] = {0};
+            int bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
+            if (bytesRead > 0) {
+                std::string message(buffer, bytesRead);
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex);
+                    messageQueue.push(message);
+                }
+                queueCondVar.notify_one();
+            } else if (bytesRead == 0) {
+                std::cout << "Server disconnected\n";
+                running = false;
+            }
+        }
+    }
 
 public:
-    MessageHandler(const std::string& serverIp, int serverPort) : authenticated(false) {
-        // Create client socket
+    MessageHandler(const std::string& serverIp, int serverPort) 
+        : authenticated(false), running(true) {
         clientSocket = socket(AF_INET, SOCK_STREAM, 0);
         if (clientSocket < 0) {
-            std::cerr << "Error creating socket" << std::endl;
-            exit(1);
+            throw std::runtime_error("Error creating socket");
         }
 
-        // Connect to server
-        sockaddr_in serverAddr;
+        sockaddr_in serverAddr{};
         serverAddr.sin_family = AF_INET;
         serverAddr.sin_port = htons(serverPort);
         serverAddr.sin_addr.s_addr = inet_addr(serverIp.c_str());
         if (connect(clientSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-            std::cerr << "Error connecting to server" << std::endl;
-            exit(1);
+            close(clientSocket);
+            throw std::runtime_error("Error connecting to server");
         }
-        std::cout << "Connected to server at " << serverIp << ":" << serverPort << std::endl;
+        std::cout << "Connected to server at " << serverIp << ":" << serverPort << "\n";
+        
+        receiverThread = std::thread(&MessageHandler::receiverFunction, this);
+    }
+
+    ~MessageHandler() {
+        running = false;
+        close(clientSocket);
+        if (receiverThread.joinable()) {
+            receiverThread.join();
+        }
     }
 
     bool authenticate(const std::string& username, const std::string& password) {
         std::string authMessage = username + "|" + password;
-        write(clientSocket, authMessage.c_str(), authMessage.size());
-        char buffer[1024] = {0};
-        int bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
-        if (bytesRead > 0) {
-            std::string response(buffer, bytesRead);
-            if (response == "AUTH_SUCCESS") {
-                authenticated = true;
-                return true;
-            }
+        if (write(clientSocket, authMessage.c_str(), authMessage.size()) < 0) {
+            return false;
+        }
+        
+        std::string response = getMessage();
+        if (response == "AUTH_SUCCESS") {
+            authenticated = true;
+            this->username = username;
+            return true;
         }
         return false;
     }
 
-    bool sendMessage(const std::string& message) {
+    void sendMessage(const std::string& message) {
         if (!authenticated) {
-            std::cerr << "Not authenticated" << std::endl;
-            return false;
+            throw std::runtime_error("Not authenticated");
         }
-        write(clientSocket, message.c_str(), message.size());
-        return true;
+        if (write(clientSocket, message.c_str(), message.size()) < 0) {
+            std::cerr << "Error sending message\n";
+        }
     }
 
-    std::string receiveMessage() {
-        if (!authenticated) {
-            return "";
-        }
-        char buffer[1024] = {0};
-        int bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
-        if (bytesRead > 0) {
-            return std::string(buffer, bytesRead);
+    std::string getMessage() {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        queueCondVar.wait(lock, [this]{ return !messageQueue.empty() || !running; });
+        if (!messageQueue.empty()) {
+            std::string msg = messageQueue.front();
+            messageQueue.pop();
+            return msg;
         }
         return "";
     }
 
-    ~MessageHandler() {
-        close(clientSocket);
+    std::string getUsername() const { return username; }
+};
+
+class Agent {
+protected:
+    MessageHandler handler;
+    std::string username;
+
+public:
+    Agent(const std::string& serverIp, int serverPort, 
+          const std::string& username, const std::string& password)
+        : handler(serverIp, serverPort), username(username) {
+        if (!handler.authenticate(username, password)) {
+            throw std::runtime_error("Authentication failed for " + username);
+        }
+    }
+
+    void sendMessage(const std::string& message) {
+        handler.sendMessage(message);
+    }
+
+    std::string getMessage() {
+        return handler.getMessage();
+    }
+};
+
+class Vehicle : public Agent {
+private:
+    double x, y;  // Position
+
+public:
+    Vehicle(const std::string& serverIp, int serverPort, 
+            const std::string& username, const std::string& password)
+        : Agent(serverIp, serverPort, username, password), x(0.0), y(0.0) {}
+
+    void updatePosition(double newX, double newY) {
+        x = newX;
+        y = newY;
+        std::string message = "POSITION|" + std::to_string(x) + "|" + std::to_string(y);
+        sendMessage(message);
+    }
+
+    void update() {
+        // Simulate movement (e.g., increment position)
+        updatePosition(x + 1.0, y + 1.0);
+
+        // Process received messages
+        while (true) {
+            std::string msg = getMessage();
+            if (msg.empty()) break;
+            size_t colonPos = msg.find(':');
+            if (colonPos != std::string::npos) {
+                std::string sender = msg.substr(0, colonPos);
+                std::string content = msg.substr(colonPos + 1);
+                if (sender != username) {
+                    std::cout << username << " received from " << sender << ": " << content << "\n";
+                }
+            }
+        }
     }
 };
 
 int main() {
-    MessageHandler client("127.0.0.1", 8080);
-    if (client.authenticate("vehicle1", "pass123")) {
-        std::cout << "Authentication successful" << std::endl;
-        client.sendMessage("Hello from vehicle1");
-        std::string msg = client.receiveMessage();
-        if (!msg.empty()) {
-            std::cout << "Received: " << msg << std::endl;
+    try {
+        Vehicle vehicle1("127.0.0.1", 8080, "vehicle1", "pass123");
+        Vehicle vehicle2("127.0.0.1", 8080, "pedestrian1", "pass456");
+
+        // Simulate CV2X communication
+        for (int i = 0; i < 5; ++i) {
+            vehicle1.update();
+            vehicle2.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
-    } else {
-        std::cout << "Authentication failed" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << "\n";
     }
     return 0;
 }
