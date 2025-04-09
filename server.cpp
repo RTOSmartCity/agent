@@ -60,14 +60,6 @@ private:
             if (bytesRead > 0) {
                 std::string message(msgBuffer, bytesRead);
                 std::string relayedMessage = username + ":" + message;
-                // Relay message to all authenticated clients
-//                std::vector<int> targets;
-//                {
-//                    std::lock_guard<std::mutex> lock(clientsMutex);
-//                    for (const auto& pair : authenticatedClients) {
-//                        targets.push_back(pair.first);
-//                    }
-//                }
                 std::lock_guard<std::mutex> lock(clientsMutex);
                 {
 					for (const auto& pair : authenticatedClients) {
