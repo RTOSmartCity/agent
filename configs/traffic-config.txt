@@ -1,0 +1,5 @@
+username=traffic1
+password=pass789
+x=30.0
+y=40.0
+state=green

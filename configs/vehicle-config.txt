@@ -1,0 +1,4 @@
+username=vehicle1
+password=pass123
+x=10.0
+y=20.0
