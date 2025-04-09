@@ -18,6 +18,59 @@ private:
     std::map<int, std::unique_ptr<std::mutex>> socketMutexes; // socket -> mutex for writing
     std::mutex clientsMutex;
 
+    void broadcast(std::string& message) {
+    	// Relay message to all authenticated clients
+    	std::string relayedMessage = username + ":" + message;
+    	std::vector<int> targets;
+		{
+			std::lock_guard<std::mutex> lock(clientsMutex);
+			for (const auto& pair : authenticatedClients) {
+				targets.push_back(pair.first);
+			}
+		}
+		for (int target : targets) {
+			auto it = socketMutexes.find(target);
+			if (it != socketMutexes.end()) {
+				std::lock_guard<std::mutex> lock(*it->second);
+				if (write(target, relayedMessage.c_str(), relayedMessage.size()) < 0) {
+					std::cerr << "Error writing to socket " << target << "\n";
+				}
+			}
+		}
+    }
+
+    std::pair<std::string, std::string> getDest(std::string& message) {
+    	size_t sep = received.find('~');
+    	std::pair<std::string, std::string> output;
+
+    	if (sep != std::string::npos) {
+    	    output.first = message.substr(0, sep);
+    	    output.second = message.substr(sep + 1);
+    	} else {
+    		output.first = "";
+    		output.second = message;
+    	}
+
+    	return output;
+    }
+
+    void send(std::string& destination, std::string& msg)
+    {
+    	{
+			std::lock_guard<std::mutex> lock(clientsMutex);
+			for (const auto& pair : authenticatedClients) {
+				int target = pair.first;
+				auto it = socketMutexes.find(target);
+				if (it != socketMutexes.end()) {
+					std::lock_guard<std::mutex> lock(*it->second);
+					if (write(target, msg.c_str(),  msg.size()) < 0) {
+						std::cerr << "Error writing to socket " << target << "\n";
+					}
+				}
+			}
+    	}
+    }
+
     void handleClient(int clientSocket) {
         // Buffer for reading data
         char buffer[1024] = {0};
@@ -59,25 +112,18 @@ private:
             bytesRead = read(clientSocket, msgBuffer, sizeof(msgBuffer) - 1);
             if (bytesRead > 0) {
                 std::string message(msgBuffer, bytesRead);
-                std::string relayedMessage = username + ":" + message;
+                std::pair<std::string, std::string> msgInfo = getDest(message);
+
+                if (msgInfo.first != "") { // there is a destination
+                	send(msgInfo.first, msgInfo.second);
+                } else {
+                	broadcast(message);
+                }
+
                 
-                // Relay message to all authenticated clients
-                std::vector<int> targets;
-                {
-                    std::lock_guard<std::mutex> lock(clientsMutex);
-                    for (const auto& pair : authenticatedClients) {
-                        targets.push_back(pair.first);
-                    }
-                }
-                for (int target : targets) {
-                    auto it = socketMutexes.find(target);
-                    if (it != socketMutexes.end()) {
-                        std::lock_guard<std::mutex> lock(*it->second);
-                        if (write(target, relayedMessage.c_str(), relayedMessage.size()) < 0) {
-                            std::cerr << "Error writing to socket " << target << "\n";
-                        }
-                    }
-                }
+
+
+
             } else if (bytesRead == 0) {
                 // Client disconnected
                 std::cout << "Client " << username << " disconnected\n";
