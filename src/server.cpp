@@ -146,7 +146,8 @@ public:
         // Hardcoded credentials for simplicity
         credentials["vehicle1"] = "pass123";
         credentials["pedestrian1"] = "pass456";
-        credentials["traffic1"] = "pass789";
+        credentials["vehicle2"] = "pass122";
+        credentials["traffic1"] = "pass780";
 
         // Create server socket
         serverSocket = socket(AF_INET, SOCK_STREAM, 0);
